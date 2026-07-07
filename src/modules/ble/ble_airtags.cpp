@@ -25,10 +25,11 @@ static BLEScan *pAirTagScan = nullptr;
 
 #ifdef NIMBLE_V2_PLUS
 class AirTagCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice *advertisedDevice) override {
 #else
 class AirTagCallbacks : public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice *advertisedDevice) {
 #endif
-    void onResult(NimBLEAdvertisedDevice *advertisedDevice) {
         const uint8_t *payload = advertisedDevice->getPayload().data();
         size_t len = advertisedDevice->getPayload().size();
 
@@ -82,11 +83,47 @@ void airtagScan() {
 #else
     pAirTagScan->setAdvertisedDeviceCallbacks(new AirTagCallbacks());
 #endif
-    pAirTagScan->setActiveScan(false);
+    pAirTagScan->setActiveScan(true);
     pAirTagScan->setInterval(100);
     pAirTagScan->setWindow(99);
 
-    pAirTagScan->start(5, false);
+    pAirTagScan->start(0, false); // Start in background (duration 0 = forever)
+
+    unsigned long startTime = millis();
+
+    tft.fillScreen(bruceConfig.bgColor);
+    drawMainBorderWithTitle("AirTag Sniffer");
+    tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+    tft.setTextSize(FM);
+
+    int last_sec = -1;
+    int last_found = -1;
+
+    while (millis() - startTime < 10000) { // 10 seconds
+        if (check(EscPress)) {
+            break;
+        }
+
+        int curr_sec = 10 - ((millis() - startTime) / 1000);
+        int curr_found = detected_airtags.size();
+
+        if (curr_sec != last_sec) {
+            tft.fillRect(10, 70, 200, 20, bruceConfig.bgColor);
+            tft.setCursor(10, 70);
+            tft.printf("Scanning... %ds", curr_sec);
+            last_sec = curr_sec;
+        }
+
+        if (curr_found != last_found) {
+            tft.fillRect(10, 100, 200, 20, bruceConfig.bgColor);
+            tft.setCursor(10, 100);
+            tft.printf("Found: %d", curr_found);
+            last_found = curr_found;
+        }
+
+        delay(50);
+    }
+    pAirTagScan->stop();
     pAirTagScan->clearResults();
 
     if (detected_airtags.empty()) {
@@ -97,15 +134,14 @@ void airtagScan() {
 
     std::vector<Option> tagOptions;
     for (size_t i = 0; i < detected_airtags.size(); i++) {
-        char macStr[18];
-        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+        char macStr[13];
+        snprintf(macStr, sizeof(macStr), "%02X%02X%02X%02X%02X%02X",
                  detected_airtags[i].mac[0], detected_airtags[i].mac[1], detected_airtags[i].mac[2],
                  detected_airtags[i].mac[3], detected_airtags[i].mac[4], detected_airtags[i].mac[5]);
 
-        String label = String(macStr) + " [" + String(detected_airtags[i].rssi) + "dBm]";
+        String label = String(macStr) + " [" + String(detected_airtags[i].rssi) + "]";
         tagOptions.push_back({label.c_str(), [i]() {
             selected_airtag_idx = i;
-            returnToMenu = true;
         }});
     }
     tagOptions.push_back({"Cancel", []() { returnToMenu = true; }});
@@ -128,6 +164,15 @@ void airtagSpoof() {
     snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
              tag.mac[0], tag.mac[1], tag.mac[2], tag.mac[3], tag.mac[4], tag.mac[5]);
     padprintln(String("MAC: ") + macStr);
+
+    String payloadStr = "Data: ";
+    int printLen = tag.payload_len > 12 ? 12 : tag.payload_len;
+    for (int i = 0; i < printLen; i++) {
+        char hex[4];
+        snprintf(hex, sizeof(hex), "%02X ", tag.payload[i]);
+        payloadStr += hex;
+    }
+    padprintln(payloadStr);
     padprintln("Press ESC to stop");
 
     uint8_t newMac[6];
@@ -197,12 +242,6 @@ void airtagSpoof() {
     while (1) {
         if (check(EscPress)) {
             pAdv->stop();
-#if defined(CONFIG_IDF_TARGET_ESP32C5)
-            esp_bt_controller_deinit();
-#else
-            BLEDevice::deinit();
-#endif
-            returnToMenu = true;
             break;
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -215,4 +254,186 @@ void airtagMenu() {
     options.push_back({"Spoof Selected", [](){ airtagSpoof(); }});
     options.push_back({"Back", [](){ returnToMenu = true; }});
     loopOptions(options, MENU_TYPE_SUBMENU, "AirTag Tools");
+}
+
+
+// --- Flipper Detect Logic ---
+
+struct FlipperDevice {
+    uint8_t mac[6];
+    char name[32];
+    int8_t rssi;
+    String type;
+};
+static std::vector<FlipperDevice> detected_flippers;
+static BLEScan *pFlipperScan = nullptr;
+
+#ifdef NIMBLE_V2_PLUS
+class FlipperCallbacks : public NimBLEScanCallbacks {
+    void onResult(const NimBLEAdvertisedDevice *advertisedDevice) override {
+#else
+class FlipperCallbacks : public BLEAdvertisedDeviceCallbacks {
+    void onResult(BLEAdvertisedDevice *advertisedDevice) {
+#endif
+        const uint8_t *payload = advertisedDevice->getPayload().data();
+        size_t len = advertisedDevice->getPayload().size();
+
+        String type_found = "";
+
+        size_t idx = 0;
+        while (idx < len) {
+            uint8_t flen = payload[idx];
+            if (flen == 0 || idx + flen >= len) break;
+            uint8_t ftype = payload[idx + 1];
+            uint8_t payload_len = flen - 1;
+            const uint8_t *fpayload = &payload[idx + 2];
+
+            auto checkUuid = [&](uint16_t uuid) {
+                if (uuid == 0x3082) { if (type_found != "White") type_found = "White"; }
+                else if (uuid == 0x3081) { if (type_found.isEmpty()) type_found = "Black"; }
+                else if (uuid == 0x3083) { if (type_found != "White") type_found = "Transparent"; }
+            };
+
+            if ((ftype == 0x02 || ftype == 0x03) && payload_len >= 2) { // 16-bit UUIDs
+                for (size_t i = 0; i + 1 < payload_len; i += 2) {
+                    uint16_t uuid = fpayload[i] | (fpayload[i + 1] << 8);
+                    checkUuid(uuid);
+                }
+            } else if ((ftype == 0x04 || ftype == 0x05) && payload_len >= 4) { // 32-bit UUIDs
+                for (size_t i = 0; i + 3 < payload_len; i += 4) {
+                    uint16_t uuid = fpayload[i] | (fpayload[i + 1] << 8); // Lower 16-bits
+                    checkUuid(uuid);
+                }
+            } else if ((ftype == 0x06 || ftype == 0x07) && payload_len >= 16) { // 128-bit UUIDs
+                for (size_t i = 0; i + 15 < payload_len; i += 16) {
+                    for (int j = 0; j <= 14; j++) {
+                        uint16_t uuid = fpayload[i + j] | (fpayload[i + j + 1] << 8);
+                        checkUuid(uuid);
+                    }
+                }
+            }
+            if (!type_found.isEmpty() && type_found == "White") break; // White is highest priority
+            idx += flen + 1;
+        }
+
+        if (!type_found.isEmpty()) {
+            NimBLEAddress addr = advertisedDevice->getAddress();
+            const uint8_t* mac = addr.getVal();
+
+            bool found = false;
+            for (auto& f : detected_flippers) {
+                if (memcmp(f.mac, mac, 6) == 0) {
+                    f.rssi = advertisedDevice->getRSSI();
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && detected_flippers.size() < 30) {
+                FlipperDevice f;
+                memcpy(f.mac, mac, 6);
+                f.rssi = advertisedDevice->getRSSI();
+                f.type = type_found;
+                String n = advertisedDevice->getName().c_str();
+                strncpy(f.name, n.c_str(), 31);
+                f.name[31] = '\0';
+                detected_flippers.push_back(f);
+            }
+        }
+    }
+};
+
+void flipperScan() {
+    detected_flippers.clear();
+
+    BLEDevice::init("");
+    pFlipperScan = BLEDevice::getScan();
+#ifdef NIMBLE_V2_PLUS
+    pFlipperScan->setScanCallbacks(new FlipperCallbacks());
+#else
+    pFlipperScan->setAdvertisedDeviceCallbacks(new FlipperCallbacks());
+#endif
+    pFlipperScan->setActiveScan(true);
+    pFlipperScan->setInterval(100);
+    pFlipperScan->setWindow(99);
+
+    pFlipperScan->start(0, false);
+
+    unsigned long startTime = millis();
+
+    tft.fillScreen(bruceConfig.bgColor);
+    drawMainBorderWithTitle("Detect Flipper");
+    tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+    tft.setTextSize(FM);
+
+    int last_sec = -1;
+    int last_found = -1;
+
+    while (millis() - startTime < 10000) { // 10 seconds
+        if (check(EscPress)) {
+            break;
+        }
+
+        int curr_sec = 10 - ((millis() - startTime) / 1000);
+        int curr_found = detected_flippers.size();
+
+        if (curr_sec != last_sec) {
+            tft.fillRect(10, 70, 200, 20, bruceConfig.bgColor);
+            tft.setCursor(10, 70);
+            tft.printf("Scanning... %ds", curr_sec);
+            last_sec = curr_sec;
+        }
+
+        if (curr_found != last_found) {
+            tft.fillRect(10, 100, 200, 20, bruceConfig.bgColor);
+            tft.setCursor(10, 100);
+            tft.printf("Found: %d", curr_found);
+            last_found = curr_found;
+        }
+
+        delay(50);
+    }
+    pFlipperScan->stop();
+    pFlipperScan->clearResults();
+
+    if (detected_flippers.empty()) {
+        displayError("No Flippers found.");
+        delay(1000);
+        return;
+    }
+
+    std::vector<Option> flipperOptions;
+    for (size_t i = 0; i < detected_flippers.size(); i++) {
+        char macStr[18];
+        snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 detected_flippers[i].mac[0], detected_flippers[i].mac[1], detected_flippers[i].mac[2],
+                 detected_flippers[i].mac[3], detected_flippers[i].mac[4], detected_flippers[i].mac[5]);
+
+        String label = String(detected_flippers[i].name);
+        if (label.isEmpty() || label == "<no name>") label = String(macStr);
+        label += " [" + detected_flippers[i].type + "]";
+
+        flipperOptions.push_back({label.c_str(), [i, macStr]() {
+            drawMainBorderWithTitle("Flipper Info");
+            tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+            tft.setTextSize(FM);
+            tft.drawString(String("MAC: ") + macStr, 10, 48);
+            tft.drawString("Name: " + String(detected_flippers[i].name), 10, 66);
+            tft.drawString("Type: " + detected_flippers[i].type, 10, 84);
+            tft.drawString("Signal: " + String(detected_flippers[i].rssi) + " dBm", 10, 102);
+
+            tft.drawCentreString("Press " + String(BTN_ALIAS) + " to close", tftWidth / 2, tftHeight - 20, 1);
+            delay(300);
+            while (1) {
+                if (check(SelPress) || check(EscPress) || check(PrevPress)) break;
+                delay(10);
+            }
+        }});
+    }
+    flipperOptions.push_back({"Cancel", []() { returnToMenu = true; }});
+
+    loopOptions(flipperOptions, MENU_TYPE_SUBMENU, "Select Flipper");
+}
+
+void flipperMenu() {
+    flipperScan();
 }

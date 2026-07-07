@@ -134,7 +134,7 @@ uint32_t writeCallback(cmd *c) {
     Argument arg1 = cmd.getArgument("filepath");
     String filepath = arg1.getValue();
     filepath.trim();
-    Argument arg2 = cmd.getArgument("sizeStr");
+    Argument arg2 = cmd.getArgument("size");
     String sizeStr = arg2.getValue();
     int fileSize = sizeStr.toInt();
 
@@ -447,10 +447,36 @@ void createStorageCommand(SimpleCLI *cli) {
     cmdFree.addPosArg("storage_type");
 }
 
+#ifndef LITE_VERSION
+void createWriteCommand(SimpleCLI *cli) {
+    Command cmd = cli->addCommand("write,upload", writeCallback);
+    cmd.addPosArg("filepath");
+    cmd.addPosArg("size", "0");
+}
+#endif
+
+void createRenameCommand(SimpleCLI *cli) {
+    Command cmd = cli->addCommand("rename,mv", renameCallback);
+    cmd.addPosArg("filepath");
+    cmd.addPosArg("newName");
+}
+
+void createCopyCommand(SimpleCLI *cli) {
+    Command cmd = cli->addCommand("copy,cp", copyCallback);
+    cmd.addPosArg("filepath");
+    cmd.addPosArg("newName");
+}
+
 void createStorageCommands(SimpleCLI *cli) {
     createListCommand(cli);
     createReadCommand(cli);
     createRemoveCommand(cli);
+
+#ifndef LITE_VERSION
+    createWriteCommand(cli);
+#endif
+    createRenameCommand(cli);
+    createCopyCommand(cli);
 
     createMkdirCommand(cli);
     createRmdirCommand(cli);

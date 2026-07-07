@@ -67,6 +67,7 @@ JsonDocument BruceConfig::toJson() const {
     setting["badUSBBLEKeyboardLayout"] = badUSBBLEKeyboardLayout;
     setting["badUSBBLEKeyDelay"] = badUSBBLEKeyDelay;
     setting["badUSBBLEShowOutput"] = badUSBBLEShowOutput;
+    setting["bleApiEnabled"] = bleApiEnabled;
 
     JsonArray dm = setting["disabledMenus"].to<JsonArray>();
     for (int i = 0; i < disabledMenus.size(); i++) { dm.add(disabledMenus[i]); }
@@ -376,6 +377,13 @@ void BruceConfig::fromFile(bool checkFS) {
 
     if (!setting["badUSBBLEShowOutput"].isNull()) {
         badUSBBLEShowOutput = setting["badUSBBLEShowOutput"].as<bool>();
+    } else {
+        count++;
+        log_e("Fail");
+    }
+
+    if (!setting["bleApiEnabled"].isNull()) {
+        bleApiEnabled = setting["bleApiEnabled"].as<int>();
     } else {
         count++;
         log_e("Fail");
@@ -760,6 +768,11 @@ void BruceConfig::validateBadUSBBLEKeyDelay() {
 
 void BruceConfig::setBadUSBBLEShowOutput(bool value) {
     badUSBBLEShowOutput = value;
+    saveFile();
+}
+
+void BruceConfig::setBleApiEnabled(int value) {
+    bleApiEnabled = value;
     saveFile();
 }
 void BruceConfig::addMifareKey(String value) { MifareKeysManager::addKey(mifareKeys, value); }

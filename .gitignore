@@ -18,3 +18,6 @@ mqjs_build
 docker-logs
 lib/mquickjs_headers/mqjs_stdlib_generator
 lib/mquickjs_headers/mqjs_stdlib_generator.exe
+.venv/
+build.log
+pio_build_log.txt

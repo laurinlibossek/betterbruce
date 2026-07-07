@@ -63,7 +63,7 @@ void WifiMenu::optionsMenu() {
     }
     if (WiFi.status() != WL_CONNECTED) {
         options = {
-            {"Connect to Wifi", lambdaHelper(wifiConnectMenu, WIFI_STA)},
+            {"Connect WiFi", lambdaHelper(wifiConnectMenu, WIFI_STA)},
             {"Start WiFi AP", [=]() {
                  wifiConnectMenu(WIFI_AP);
                  displayInfo("pwd: " + bruceConfig.wifiAp.pwd, true);
@@ -74,6 +74,7 @@ void WifiMenu::optionsMenu() {
     if (WiFi.getMode() == WIFI_MODE_STA || WiFi.getMode() == WIFI_MODE_APSTA) {
         options.push_back({"AP info", displayAPInfo});
     }
+    options.push_back({"AP Finder", apFinder});
     options.push_back({"Wifi Atks", wifi_atk_menu});
     options.push_back({"Evil Portal", [=]() {
                            if (isWebUIActive || server) {
@@ -137,8 +138,8 @@ void WifiMenu::configMenu() {
         std::vector<Option> wifiOptions;
 
     wifiOptions.push_back({"Change MAC", wifiMACMenu});
-    wifiOptions.push_back({"Add Evil Wifi", addEvilWifiMenu});
-    wifiOptions.push_back({"Remove Evil Wifi", removeEvilWifiMenu});
+    wifiOptions.push_back({"+ Evil Wifi", addEvilWifiMenu});
+    wifiOptions.push_back({"- Evil Wifi", removeEvilWifiMenu});
 
     // Evil Wifi Settings submenu (unchanged)
     wifiOptions.push_back({"Evil Wifi Settings", [this]() {

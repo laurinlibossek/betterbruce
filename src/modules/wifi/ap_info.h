@@ -2,5 +2,6 @@
 #define __AP_INFO_H__
 
 void displayAPInfo();
+void apFinder();
 
 #endif

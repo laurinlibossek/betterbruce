@@ -86,6 +86,7 @@ public:
     int badUSBBLEKeyboardLayout = 0;
     uint16_t badUSBBLEKeyDelay = 10;
     bool badUSBBLEShowOutput = true;
+    int bleApiEnabled = 0;
 
     std::vector<String> disabledMenus = {};
 
@@ -183,6 +184,7 @@ public:
     void setBadUSBBLEKeyDelay(uint16_t value);
     void validateBadUSBBLEKeyDelay();
     void setBadUSBBLEShowOutput(bool value);
+    void setBleApiEnabled(int value);
     void addDisabledMenu(String value);
     // TODO: removeDisabledMenu(String value);
 

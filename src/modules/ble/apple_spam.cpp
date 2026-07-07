@@ -134,7 +134,6 @@ void startAppleSpamAll() {
         displayTextLine(String(type_name) + " " + String(millis() / 1000) + "s");
 
         BLEAdvertisementData advData;
-        advData.setFlags(0x06);
 #ifdef NIMBLE_V2_PLUS
         advData.addData(packet, len);
 #else

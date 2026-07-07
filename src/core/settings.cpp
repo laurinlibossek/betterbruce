@@ -1559,6 +1559,7 @@ void enableBLEAPI() {
     }
 
     ble_api_enabled = !ble_api_enabled;
+    bruceConfig.setBleApiEnabled(ble_api_enabled ? 1 : 0);
 }
 
 bool isBLEAPIEnabled() {

@@ -120,3 +120,65 @@ void displayAPInfo() {
     fillInfo(area);
     area.show();
 }
+
+extern bool showHiddenNetworks;
+#include "core/utils.h"
+
+void apFinder() {
+    int nets;
+    displayTextLine("Scanning..");
+    nets = WiFi.scanNetworks(false, showHiddenNetworks);
+    options.clear();
+    for (int i = 0; i < nets; i++) {
+        String ssid = WiFi.SSID(i);
+        String displaySSID = ssid;
+        if (displaySSID.length() == 0) {
+            displaySSID = "<Hidden SSID> " + WiFi.BSSIDstr(i);
+        }
+
+        String optionText = displaySSID + " (" + String(WiFi.RSSI(i)) + "dB|ch." + String(WiFi.channel(i)) + ")";
+        String targetBSSIDstr = WiFi.BSSIDstr(i);
+        int initialRSSI = WiFi.RSSI(i);
+
+        options.push_back({optionText.c_str(), [=]() {
+            bool apFinderActive = true;
+            uint32_t lastScanTime = millis();
+            int currentRSSI = initialRSSI;
+
+            drawMainBorderWithTitle("AP Finder");
+            tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+
+            uint16_t startY = tftHeight / 4;
+            tft.drawCentreString("AP: " + displaySSID, tft.width() / 2, startY, SMOOTH_FONT);
+            tft.drawString("Press Back to exit", 10, tftHeight - 20);
+
+            while (apFinderActive) {
+                if (millis() - lastScanTime > 3000) {
+                    lastScanTime = millis();
+                    int cur_nets = WiFi.scanNetworks(false, showHiddenNetworks);
+                    for (int k = 0; k < cur_nets; k++) {
+                        if (WiFi.BSSIDstr(k) == targetBSSIDstr) {
+                            currentRSSI = WiFi.RSSI(k);
+                            break;
+                        }
+                    }
+                }
+
+                tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+                tft.drawCentreString("RSSI : " + String(currentRSSI) + " (in -dB)   ", tft.width() / 2, tft.height() / 2, SMOOTH_FONT);
+                
+                if (check(EscPress)) {
+                    apFinderActive = false;
+                    returnToMenu = false; // ensure we stay in menu
+                    break;
+                }
+
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+            }
+        }});
+    }
+
+    addOptionToMainMenu();
+    loopOptions(options);
+    options.clear();
+}

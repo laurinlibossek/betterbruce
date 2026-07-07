@@ -6,4 +6,7 @@ void airtagMenu();
 void airtagScan();
 void airtagSpoof();
 
+void flipperMenu();
+void flipperScan();
+
 #endif

@@ -2,17 +2,36 @@
 #include "BLESerialService.h"
 #include <NimBLEDevice.h>
 
-BLESerialService::BLESerialService() : BruceBLEService() {}
+BLESerialService::BLESerialService() : BruceBLEService() {
+    memset(rxBuffer, 0, BLE_RX_BUFFER_SIZE);
+}
 
 BLESerialService::~BLESerialService() {}
 
-static bool newValue = false;
-
 class BLESerialCallbacks : public NimBLECharacteristicCallbacks {
+    BLESerialService *service;
+
     void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) override {
-        newValue = true;
+        // Push incoming BLE data into the ring buffer
+        NimBLEAttValue val = pCharacteristic->getValue();
+        service->pushToRxBuffer(val.data(), val.size());
     }
+
+public:
+    explicit BLESerialCallbacks(BLESerialService *svc) : service(svc) {}
 };
+
+void BLESerialService::pushToRxBuffer(const uint8_t *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        size_t nextHead = (rxHead + 1) % BLE_RX_BUFFER_SIZE;
+        if (nextHead == rxTail) {
+            // Buffer full, drop oldest byte
+            rxTail = (rxTail + 1) % BLE_RX_BUFFER_SIZE;
+        }
+        rxBuffer[rxHead] = data[i];
+        rxHead = nextHead;
+    }
+}
 
 void BLESerialService::setup(NimBLEServer *pServer) {
     pService = pServer->createService("4371ec0b-3d43-49f9-b731-7c72a4a7bb91");
@@ -22,7 +41,7 @@ void BLESerialService::setup(NimBLEServer *pServer) {
         NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::WRITE
     );
 
-    callbacks = new BLESerialCallbacks();
+    callbacks = new BLESerialCallbacks(this);
     serial_char->setCallbacks(callbacks);
 
     pService->start();
@@ -32,10 +51,23 @@ void BLESerialService::setup(NimBLEServer *pServer) {
 void BLESerialService::end() { delete callbacks; }
 
 int BLESerialService::available() {
-    if (!newValue) return 0;
-    newValue = false;
+    if (rxHead >= rxTail) return rxHead - rxTail;
+    return BLE_RX_BUFFER_SIZE - rxTail + rxHead;
+}
 
-    return serial_char->getValue().size();
+size_t BLESerialService::readBytes(char *buffer, size_t length) {
+    size_t count = 0;
+    unsigned long start = millis();
+    while (count < length && (millis() - start < 5000)) {
+        if (available()) {
+            buffer[count++] = rxBuffer[rxTail];
+            rxTail = (rxTail + 1) % BLE_RX_BUFFER_SIZE;
+            start = millis(); // Reset timeout on each byte received
+        } else {
+            delay(2);
+        }
+    }
+    return count;
 }
 
 size_t BLESerialService::println(const String &s) {
@@ -57,21 +89,34 @@ size_t BLESerialService::println(size_t n) {
 }
 
 void BLESerialService::vprintf(const char *fmt, va_list args) {
-    int size = vsnprintf(NULL, 0, fmt, args) + 1;
-    char str[BUFFER_SIZE];
-    sprintf(str, fmt, args);
-
-    serial_char->notify(reinterpret_cast<const uint8_t *>(str), size);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int size = vsnprintf(NULL, 0, fmt, args_copy);
+    va_end(args_copy);
+    
+    if (size <= 0) return;
+    
+    char *buf = new char[size + 1];
+    vsnprintf(buf, size + 1, fmt, args);
+    
+    serial_char->notify(reinterpret_cast<const uint8_t *>(buf), size);
     vTaskDelay(pdMS_TO_TICKS(10));
+    delete[] buf;
 }
 
 String BLESerialService::readStringUntil(char terminator) {
-    Serial.println("readStringUntil");
     String result = "";
-    std::string value = serial_char->getValue();
-    for (char c : value) {
-        result += c;
-        if (c == terminator) break;
+    unsigned long start = millis();
+    while (millis() - start < 5000) {
+        if (available()) {
+            char c = rxBuffer[rxTail];
+            rxTail = (rxTail + 1) % BLE_RX_BUFFER_SIZE;
+            if (c == terminator) break;
+            result += c;
+            start = millis(); // Reset timeout on data
+        } else {
+            delay(2);
+        }
     }
     return result;
 }

@@ -500,6 +500,14 @@ void setup() {
     //  start a task to handle serial commands while the webui is running
     startSerialCommandsHandlerTask(true);
 
+#if !defined(LITE_VERSION)
+    // Auto-restore BLE API if it was enabled before reboot/deep sleep
+    if (bruceConfig.bleApiEnabled) {
+        enableBLEAPI(); // This calls bleApi.setup() and sets ble_api_enabled = true
+        Serial.println("BLE API auto-restored from config");
+    }
+#endif
+
     wakeUpScreen();
     if (bruceConfig.startupApp != "" && !startupApp.startApp(bruceConfig.startupApp)) {
         bruceConfig.setStartupApp("");

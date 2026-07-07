@@ -46,13 +46,15 @@ void ble_info(String name, String address, String signal) {
     tft.drawString("Name: " + name, 10, 48);
     tft.drawString("Adresse: " + address, 10, 66);
     tft.drawString("Signal: " + String(signal) + " dBm", 10, 84);
-    tft.drawCentreString("   Press " + String(BTN_ALIAS) + " to act", tftWidth / 2, tftHeight - 20, 1);
+    tft.drawCentreString("Press " + String(BTN_ALIAS) + " to close", tftWidth / 2, tftHeight - 20, 1);
 
     delay(300);
-    while (!check(SelPress)) {
-        while (!check(SelPress)) { yield(); } // timerless debounce
-        returnToMenu = true;
-        break;
+    while (1) {
+        if (check(SelPress) || check(EscPress) || check(PrevPress)) {
+            returnToMenu = true;
+            break;
+        }
+        delay(10);
     }
 }
 #ifdef NIMBLE_V2_PLUS

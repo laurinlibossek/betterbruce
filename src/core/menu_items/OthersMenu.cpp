@@ -35,7 +35,7 @@ void OthersMenu::optionsMenu() {
 #ifndef LITE_VERSION
         {"iButton",      setup_ibutton                },
 #endif
-        {"U2F Key",      u2f_key_setup                },
+        // {"U2F Key",      u2f_key_setup                }, // Hidden for now as Arduino USB HID lacks explicit OUT endpoints for WebAuthn validation
     };
 
     addOptionToMainMenu();

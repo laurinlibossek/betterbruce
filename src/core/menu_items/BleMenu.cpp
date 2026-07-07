@@ -43,6 +43,7 @@ void BleMenu::optionsMenu() {
     options.push_back({"Apple Spam", [=]() { startAppleSpamAll(); }});
 #if !defined(LITE_VERSION)
     options.push_back({"AirTag Sniff/Spoof", [=]() { airtagMenu(); }});
+    options.push_back({"Detect Flipper", [=]() { flipperMenu(); }});
 #endif
     options.push_back({"Other Spam", [=]() { spamMenu(); }});
     options.push_back({"Config", [this]() { configMenu(); }});
